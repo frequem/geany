@@ -414,6 +414,19 @@ static void tab_bar_menu_activate_cb(GtkMenuItem *menuitem, gpointer data)
 	document_show_tab(doc);
 }
 
+static void on_open_in_new_tab_activate(GtkMenuItem *menuitem, gpointer user_data)
+{
+	GeanyDocument *doc = user_data;
+	gchar *doc_path;
+
+	g_return_if_fail(doc->is_valid);
+
+	doc_path = utils_get_locale_from_utf8(doc->file_name);
+	main_status.opening_new_tab = TRUE;
+	document_open_file(doc_path, doc->readonly, doc->file_type, doc->encoding);
+	main_status.opening_new_tab = FALSE;
+	g_free(doc_path);
+}
 
 static void on_open_in_new_window_activate(GtkMenuItem *menuitem, gpointer user_data)
 {
@@ -471,6 +484,15 @@ static void show_tab_bar_popup_menu(GdkEventButton *event, GeanyDocument *doc)
 	menu_item = gtk_separator_menu_item_new();
 	gtk_widget_show(menu_item);
 	gtk_container_add(GTK_CONTAINER(menu), menu_item);
+
+	menu_item = ui_image_menu_item_new(GTK_STOCK_OPEN, _("Open in New _Tab"));
+	gtk_widget_show(menu_item);
+	gtk_container_add(GTK_CONTAINER(menu), menu_item);
+	g_signal_connect(menu_item, "activate",
+		G_CALLBACK(on_open_in_new_tab_activate), doc);
+	/* disable if not on disk */
+	if (doc == NULL || !doc->real_path)
+		gtk_widget_set_sensitive(menu_item, FALSE);
 
 	menu_item = ui_image_menu_item_new(GTK_STOCK_OPEN, _("Open in New _Window"));
 	gtk_widget_show(menu_item);

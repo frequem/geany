@@ -628,7 +628,7 @@ static GeanyDocument *document_create(const gchar *utf8_filename)
 	{
 		doc = document_get_current();
 		/* remove the empty document first */
-		if (doc != NULL && doc->file_name == NULL && ! doc->changed)
+		if (doc != NULL && doc->file_name == NULL && ! doc->changed && utf8_filename != NULL)
 			/* prevent immediately opening another new doc with
 			 * new_document_after_close pref */
 			remove_page(0);
@@ -1323,14 +1323,19 @@ GeanyDocument *document_open_file_full(GeanyDocument *doc, const gchar *filename
 		doc = document_find_by_filename(utf8_filename);
 		if (doc != NULL)
 		{
-			ui_add_recent_document(doc);	/* either add or reorder recent item */
+			//ui_add_recent_document(doc);	/* either add or reorder recent item */
 			/* show the doc before reload dialog */
-			document_show_tab(doc);
+			//document_show_tab(doc);
 			document_check_disk_status(doc, TRUE);	/* force a file changed check */
 		}
 	}
-	if (reload || doc == NULL)
+	
+	GeanyDocument *currentDoc = document_get_current();
+	int reopen = currentDoc != NULL && doc != NULL && g_str_equal(currentDoc->file_name, doc->file_name);
+	
+	if (reload || doc == NULL || main_status.opening_session_files || main_status.opening_new_tab || reopen)
 	{	/* doc possibly changed */
+		
 		display_filename = utils_str_middle_truncate(utf8_filename, 100);
 
 		if (! load_text_file(locale_filename, display_filename, &filedata, forced_enc))
@@ -1341,7 +1346,7 @@ GeanyDocument *document_open_file_full(GeanyDocument *doc, const gchar *filename
 			return NULL;
 		}
 
-		if (! reload)
+		if (!reload)
 		{
 			doc = document_create(utf8_filename);
 			g_return_val_if_fail(doc != NULL, NULL); /* really should not happen */
