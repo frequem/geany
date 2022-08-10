@@ -726,11 +726,12 @@ gchar *sci_get_line(ScintillaObject *sci, gint line_num)
  *
  * @param sci Scintilla widget.
  * @param len Length of @a text buffer, usually sci_get_length() + 1.
- * @param text Text buffer; must be allocated @a len + 1 bytes for null-termination. */
+ * @param text Text buffer; must be allocated @a len bytes for null-termination. */
 GEANY_API_SYMBOL
 void sci_get_text(ScintillaObject *sci, gint len, gchar *text)
 {
-	SSM(sci, SCI_GETTEXT, (uptr_t) len, (sptr_t) text);
+	g_return_if_fail(len > 0);
+	SSM(sci, SCI_GETTEXT, (uptr_t) len - 1, (sptr_t) text);
 }
 
 
@@ -748,11 +749,13 @@ gchar *sci_get_contents(ScintillaObject *sci, gint buffer_len)
 {
 	gchar *text;
 
+	g_return_val_if_fail(buffer_len != 0, NULL);
+
 	if (buffer_len < 0)
 		buffer_len = sci_get_length(sci) + 1;
 
 	text = g_malloc(buffer_len);
-	SSM(sci, SCI_GETTEXT, (uptr_t) buffer_len, (sptr_t) text);
+	SSM(sci, SCI_GETTEXT, (uptr_t) buffer_len - 1, (sptr_t) text);
 	return text;
 }
 
@@ -760,6 +763,9 @@ gchar *sci_get_contents(ScintillaObject *sci, gint buffer_len)
 /** Gets selected text.
  * @deprecated sci_get_selected_text is deprecated and should not be used in newly-written code.
  * Use sci_get_selection_contents() instead.
+ *
+ * @note You must ensure NUL termination yourself, this function does
+ * not NUL terminate the buffer itself.
  *
  * @param sci Scintilla widget.
  * @param text Text buffer; must be allocated sci_get_selected_text_length() + 1 bytes
@@ -785,11 +791,23 @@ gchar *sci_get_selection_contents(ScintillaObject *sci)
 }
 
 
-/** Gets selected text length.
+/** Gets selected text length including the terminating NUL character.
+ * @deprecated sci_get_selected_text_length is deprecated and should not be used in newly-written code.
+ * Use sci_get_selected_text_length2() instead.
  * @param sci Scintilla widget.
  * @return Length. */
 GEANY_API_SYMBOL
 gint sci_get_selected_text_length(ScintillaObject *sci)
+{
+	return (gint) SSM(sci, SCI_GETSELTEXT, 0, 0) + 1;
+}
+
+
+/** Gets selected text length without the terminating NUL character.
+ * @param sci Scintilla widget.
+ * @return Length. */
+GEANY_API_SYMBOL
+gint sci_get_selected_text_length2(ScintillaObject *sci)
 {
 	return (gint) SSM(sci, SCI_GETSELTEXT, 0, 0);
 }

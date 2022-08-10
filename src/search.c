@@ -30,6 +30,7 @@
 #include "search.h"
 
 #include "app.h"
+#include "dialogs.h"
 #include "document.h"
 #include "encodings.h"
 #include "encodingsprivate.h"
@@ -197,9 +198,12 @@ static void init_prefs(void)
 		"pref_search_always_wrap", FALSE, "check_hide_find_dialog");
 	stash_group_add_toggle_button(group, &search_prefs.use_current_file_dir,
 		"pref_search_current_file_dir", TRUE, "check_fif_current_dir");
+
+	/* dialog layout & positions */
+	group = stash_group_new("search");
+	configuration_add_session_group(group, FALSE);
 	stash_group_add_boolean(group, &find_dlg.all_expanded, "find_all_expanded", FALSE);
 	stash_group_add_boolean(group, &replace_dlg.all_expanded, "replace_all_expanded", FALSE);
-	/* dialog positions */
 	stash_group_add_integer(group, &find_dlg.position[0], "position_find_x", -1);
 	stash_group_add_integer(group, &find_dlg.position[1], "position_find_y", -1);
 	stash_group_add_integer(group, &replace_dlg.position[0], "position_replace_x", -1);
@@ -1453,6 +1457,14 @@ on_replace_dialog_response(GtkDialog *dialog, gint response, gpointer user_data)
 	{
 		gtk_widget_hide(replace_dlg.dialog);
 		return;
+	}
+
+	if (response == GEANY_RESPONSE_REPLACE_IN_SESSION) {
+		if (! dialogs_show_question_full(replace_dlg.dialog, NULL, NULL,
+			_("This operation will modify all open files which contain the text to replace."),
+			_("Are you sure to replace in the whole session?"))) {
+			return;
+		}
 	}
 
 	search_backwards_re = settings.replace_search_backwards;

@@ -71,6 +71,7 @@ typedef struct GeanyInterfacePrefs
 	gint 			symbols_sort_mode;			/**< symbol list sorting mode */
 	/** whether to show a warning when closing a project to open a new one */
 	gboolean		warn_on_project_close;
+	gint			openfiles_path_mode;
 }
 GeanyInterfacePrefs;
 
@@ -364,6 +365,8 @@ GtkWidget *ui_create_encodings_combo_box(gboolean has_detect, gint default_enc);
 gint ui_encodings_combo_box_get_active_encoding(GtkComboBox *combo);
 
 gboolean ui_encodings_combo_box_set_active_encoding(GtkComboBox *combo, gint enc);
+
+gchar *ui_get_project_directory(const gchar *path);
 
 #endif /* GEANY_PRIVATE */
 

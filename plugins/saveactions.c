@@ -40,7 +40,7 @@ GeanyData		*geany_data;
 PLUGIN_VERSION_CHECK(GEANY_API_VERSION)
 
 PLUGIN_SET_INFO(_("Save Actions"), _("This plugin provides different actions related to saving of files."),
-	VERSION, _("The Geany developer team"))
+	PACKAGE_VERSION, _("The Geany developer team"))
 
 
 enum
@@ -814,7 +814,7 @@ GtkWidget *plugin_configure(GtkDialog *dialog)
 		gtk_box_pack_start(GTK_BOX(inner_vbox), hbox, FALSE, FALSE, 0);
 
 		label = gtk_label_new_with_mnemonic(
-			_("Date/_Time format for backup files (\"man strftime\" for details):"));
+			_("Date/_Time format for backup files (for a list of available conversion specifiers see https://docs.gtk.org/glib/method.DateTime.format.html):"));
 		gtk_misc_set_alignment(GTK_MISC(label), 0, 0.5);
 		gtk_box_pack_start(GTK_BOX(inner_vbox), label, FALSE, FALSE, 7);
 

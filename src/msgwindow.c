@@ -1008,26 +1008,6 @@ static void parse_compiler_error_line(const gchar *string,
 			}
 			break;
 		}
-		case GEANY_FILETYPES_FERITE:
-		{
-			/* Error: Parse Error: on line 5 in "/tmp/hello.fe"
-			 * Error: Compile Error: on line 24, in /test/class.fe */
-			if (strncmp(string, "Error: Compile Error", 20) == 0)
-			{
-				data.pattern = " ";
-				data.min_fields = 8;
-				data.line_idx = 5;
-				data.file_idx = 7;
-			}
-			else
-			{
-				data.pattern = " \"";
-				data.min_fields = 10;
-				data.line_idx = 5;
-				data.file_idx = 8;
-			}
-			break;
-		}
 		case GEANY_FILETYPES_HTML:
 		{
 			/* line 78 column 7 - Warning: <table> missing '>' for end of tag */
@@ -1301,7 +1281,7 @@ void msgwin_switch_tab(gint tabnum, gboolean show)
 		case MSG_STATUS: widget = msgwindow.tree_status; break;
 		case MSG_MESSAGE: widget = msgwindow.tree_msg; break;
 #ifdef HAVE_VTE
-		case MSG_VTE: widget = (vte_info.have_vte) ? vc->vte : NULL; break;
+		case MSG_VTE: widget = (vte_info.have_vte) ? vte_config.vte : NULL; break;
 #endif
 		default: break;
 	}

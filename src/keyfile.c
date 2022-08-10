@@ -46,6 +46,7 @@
 #include "printing.h"
 #include "project.h"
 #include "sciwrappers.h"
+#include "sidebar.h"
 #include "socket.h"
 #include "stash.h"
 #include "support.h"
@@ -106,16 +107,22 @@
 
 static gchar *scribble_text = NULL;
 static gint scribble_pos = -1;
-static GPtrArray *session_files = NULL;
+static GPtrArray *default_session_files = NULL;
 static gint session_notebook_page;
 static gint hpan_position;
 static gint vpan_position;
-static guint document_list_update_idle_func_id = 0;
 static const gchar atomic_file_saving_key[] = "use_atomic_file_saving";
 
-static GPtrArray *keyfile_groups = NULL;
+typedef enum
+{
+	PREFS,
+	SESSION,
 
-GPtrArray *pref_groups = NULL;
+	MAX_PAYLOAD
+} ConfigPayload;
+
+static GPtrArray *keyfile_groups[MAX_PAYLOAD];
+GPtrArray *pref_groups;
 
 static struct
 {
@@ -125,12 +132,11 @@ static struct
 }
 build_menu_prefs;
 
-
 /* The group will be free'd on quitting.
  * @param for_prefs_dialog is whether the group also has Prefs dialog items. */
 void configuration_add_pref_group(struct StashGroup *group, gboolean for_prefs_dialog)
 {
-	g_ptr_array_add(keyfile_groups, group);
+	g_ptr_array_add(keyfile_groups[PREFS], group);
 
 	if (for_prefs_dialog)
 		g_ptr_array_add(pref_groups, group);
@@ -144,6 +150,23 @@ void configuration_add_various_pref_group(struct StashGroup *group,
 {
 	configuration_add_pref_group(group, TRUE);
 	stash_group_set_various(group, TRUE, prefix);
+}
+
+
+/* The group will be free'd on quitting.
+ *
+ * @a for_prefs_dialog is typically @c FALSE as session configuration is not
+ * well suited for the Preferences dialog. Probably only existing prefs that
+ * migrated to session data should set this to @c TRUE.
+ *
+ * @param for_prefs_dialog is whether the group also has Prefs dialog items.
+ */
+void configuration_add_session_group(struct StashGroup *group, gboolean for_prefs_dialog)
+{
+	g_ptr_array_add(keyfile_groups[SESSION], group);
+
+	if (for_prefs_dialog)
+		g_ptr_array_add(pref_groups, group);
 }
 
 
@@ -164,6 +187,7 @@ static void init_pref_groups(void)
 	stash_group_add_toggle_button(group, &file_prefs.tab_close_switch_to_mru,
 		"tab_close_switch_to_mru", FALSE, "check_tab_close_switch_to_mru");
 	stash_group_add_integer(group, &interface_prefs.tab_pos_sidebar, "tab_pos_sidebar", GTK_POS_TOP);
+	stash_group_add_integer(group, &interface_prefs.openfiles_path_mode, "openfiles_path_mode", -1);
 	stash_group_add_radio_buttons(group, &interface_prefs.sidebar_pos,
 		"sidebar_pos", GTK_POS_LEFT,
 		"radio_sidebar_left", GTK_POS_LEFT,
@@ -286,6 +310,17 @@ static void init_pref_groups(void)
 		"socket_remote_cmd_port", SOCKET_WINDOWS_REMOTE_CMD_PORT);
 #endif
 
+#ifdef HAVE_VTE
+	/* various VTE prefs. */
+	group = stash_group_new("VTE");
+	configuration_add_various_pref_group(group, "terminal");
+
+	stash_group_add_string(group, &vte_config.send_cmd_prefix,
+		"send_cmd_prefix", "");
+	stash_group_add_boolean(group, &vte_config.send_selection_unsafe,
+		"send_selection_unsafe", FALSE);
+#endif
+
 	/* Note: Interface-related various prefs are in ui_init_prefs() */
 
 	/* various build-menu prefs */
@@ -309,12 +344,12 @@ typedef enum SettingAction
 }
 SettingAction;
 
-static void settings_action(GKeyFile *config, SettingAction action)
+static void settings_action(GKeyFile *config, SettingAction action, ConfigPayload payload)
 {
 	guint i;
 	StashGroup *group;
 
-	foreach_ptr_array(group, i, keyfile_groups)
+	foreach_ptr_array(group, i, keyfile_groups[payload])
 	{
 		switch (action)
 		{
@@ -440,14 +475,10 @@ void configuration_save_session_files(GKeyFile *config)
 
 static void save_dialog_prefs(GKeyFile *config)
 {
-	/* new settings should be added in init_pref_groups() */
-	settings_action(config, SETTING_WRITE);
-
 	/* Some of the key names are not consistent, but this is for backwards compatibility */
 
 	/* general */
 	g_key_file_set_boolean(config, PACKAGE, "pref_main_load_session", prefs.load_session);
-	g_key_file_set_boolean(config, PACKAGE, "pref_main_project_session", project_prefs.project_session);
 	g_key_file_set_boolean(config, PACKAGE, "pref_main_project_file_in_basedir", project_prefs.project_file_in_basedir);
 	g_key_file_set_boolean(config, PACKAGE, "pref_main_save_winpos", prefs.save_winpos);
 	g_key_file_set_boolean(config, PACKAGE, "pref_main_save_wingeom", prefs.save_wingeom);
@@ -554,6 +585,7 @@ static void save_dialog_prefs(GKeyFile *config)
 	g_key_file_set_boolean(config, "VTE", "load_vte", vte_info.load_vte);
 	if (vte_info.have_vte)
 	{
+		VteConfig *vc = &vte_config;
 		gchar *tmp_string;
 
 		g_key_file_set_string(config, "VTE", "font", vc->font);
@@ -578,12 +610,6 @@ static void save_dialog_prefs(GKeyFile *config)
 #endif
 }
 
-typedef enum ConfigPayload
-{
-	PREFS,
-	SESSION
-}
-ConfigPayload;
 
 static void save_ui_prefs(GKeyFile *config)
 {
@@ -661,7 +687,7 @@ void write_config_file(gchar const *filename, ConfigPayload payload)
 			save_recent_files(config, ui_prefs.recent_projects_queue, "recent_projects");
 			project_save_prefs(config);	/* save project filename, etc. */
 			save_ui_session(config);
-			if (cl_options.load_session)
+			if (cl_options.load_session && app->project == NULL)
 				configuration_save_session_files(config);
 #ifdef HAVE_VTE
 			else if (vte_info.have_vte)
@@ -672,6 +698,10 @@ void write_config_file(gchar const *filename, ConfigPayload payload)
 #endif
 			break;
 	}
+
+	/* new settings should be added in init_pref_groups() */
+	settings_action(config, SETTING_WRITE, payload);
+
 	/* write the file */
 	data = g_key_file_to_data(config, NULL, NULL);
 	utils_write_file(configfile, data);
@@ -709,34 +739,20 @@ static void load_recent_files(GKeyFile *config, GQueue *queue, const gchar *key)
 
 
 /*
- * Load session list from the given keyfile, and store it in the global
- * session_files variable for later file loading
+ * Load session list from the given keyfile and return an array containg the file names
  * */
-void configuration_load_session_files(GKeyFile *config, gboolean read_recent_files)
+GPtrArray *configuration_load_session_files(GKeyFile *config)
 {
 	guint i;
 	gboolean have_session_files;
 	gchar entry[16];
 	gchar **tmp_array;
 	GError *error = NULL;
+	GPtrArray *files;
 
 	session_notebook_page = utils_get_setting_integer(config, "files", "current_page", -1);
 
-	if (read_recent_files)
-	{
-		load_recent_files(config, ui_prefs.recent_queue, "recent_files");
-		load_recent_files(config, ui_prefs.recent_projects_queue, "recent_projects");
-	}
-
-	/* the project may load another list than the main setting */
-	if (session_files != NULL)
-	{
-		foreach_ptr_array(tmp_array, i, session_files)
-			g_strfreev(tmp_array);
-		g_ptr_array_free(session_files, TRUE);
-	}
-
-	session_files = g_ptr_array_new();
+	files = g_ptr_array_new();
 	have_session_files = TRUE;
 	i = 0;
 	while (have_session_files)
@@ -749,7 +765,7 @@ void configuration_load_session_files(GKeyFile *config, gboolean read_recent_fil
 			error = NULL;
 			have_session_files = FALSE;
 		}
-		g_ptr_array_add(session_files, tmp_array);
+		g_ptr_array_add(files, tmp_array);
 		i++;
 	}
 
@@ -762,6 +778,8 @@ void configuration_load_session_files(GKeyFile *config, gboolean read_recent_fil
 		g_free(tmp_string);
 	}
 #endif
+
+	return files;
 }
 
 
@@ -806,8 +824,7 @@ static void load_dialog_prefs(GKeyFile *config)
 	prefs.confirm_exit = utils_get_setting_boolean(config, PACKAGE, "pref_main_confirm_exit", FALSE);
 	prefs.suppress_status_messages = utils_get_setting_boolean(config, PACKAGE, "pref_main_suppress_status_messages", FALSE);
 	prefs.load_session = utils_get_setting_boolean(config, PACKAGE, "pref_main_load_session", TRUE);
-	project_prefs.project_session = utils_get_setting_boolean(config, PACKAGE, "pref_main_project_session", TRUE);
-	project_prefs.project_file_in_basedir = utils_get_setting_boolean(config, PACKAGE, "pref_main_project_file_in_basedir", FALSE);
+	project_prefs.project_file_in_basedir = utils_get_setting_boolean(config, PACKAGE, "pref_main_project_file_in_basedir", TRUE);
 	prefs.save_winpos = utils_get_setting_boolean(config, PACKAGE, "pref_main_save_winpos", TRUE);
 	prefs.save_wingeom = utils_get_setting_boolean(config, PACKAGE, "pref_main_save_wingeom", prefs.save_winpos);
 	prefs.beep_on_errors = utils_get_setting_boolean(config, PACKAGE, "beep_on_errors", TRUE);
@@ -915,7 +932,7 @@ static void load_dialog_prefs(GKeyFile *config)
 	vte_info.load_vte = utils_get_setting_boolean(config, "VTE", "load_vte", TRUE);
 	if (vte_info.load_vte && vte_info.load_vte_cmdline /* not disabled on the cmdline */)
 	{
-		StashGroup *group;
+		VteConfig *vc = &vte_config;
 		struct passwd *pw = getpwuid(getuid());
 		const gchar *shell = (pw != NULL) ? pw->pw_shell : "/bin/sh";
 
@@ -926,7 +943,6 @@ static void load_dialog_prefs(GKeyFile *config)
 			shell = "/bin/bash -l";
 #endif
 
-		vc = g_new0(VteConfig, 1);
 		vte_info.dir = utils_get_setting_string(config, "VTE", "last_dir", NULL);
 		if ((vte_info.dir == NULL || utils_str_equal(vte_info.dir, "")) && pw != NULL)
 			/* last dir is not set, fallback to user's home directory */
@@ -948,15 +964,6 @@ static void load_dialog_prefs(GKeyFile *config)
 		vc->scrollback_lines = utils_get_setting_integer(config, "VTE", "scrollback_lines", 500);
 		get_setting_color(config, "VTE", "colour_fore", &vc->colour_fore, "#ffffff");
 		get_setting_color(config, "VTE", "colour_back", &vc->colour_back, "#000000");
-
-		/* various VTE prefs.
-		 * this can't be done in init_pref_groups() because we need to know the value of
-		 * vte_info.load_vte, and `vc` to be initialized */
-		group = stash_group_new("VTE");
-		configuration_add_various_pref_group(group, "terminal");
-
-		stash_group_add_string(group, &vc->send_cmd_prefix, "send_cmd_prefix", "");
-		stash_group_add_boolean(group, &vc->send_selection_unsafe, "send_selection_unsafe", FALSE);
 	}
 #endif
 	/* templates */
@@ -1028,16 +1035,6 @@ static void load_dialog_prefs(GKeyFile *config)
 	printing_prefs.print_page_header = utils_get_setting_boolean(config, "printing", "print_page_header", TRUE);
 	printing_prefs.page_header_basename = utils_get_setting_boolean(config, "printing", "page_header_basename", FALSE);
 	printing_prefs.page_header_datefmt = utils_get_setting_string(config, "printing", "page_header_datefmt", "%c");
-
-	/* read stash prefs */
-	settings_action(config, SETTING_READ);
-
-	/* build menu
-	 * after stash prefs as it uses some of them */
-	build_set_group_count(GEANY_GBG_FT, build_menu_prefs.number_ft_menu_items);
-	build_set_group_count(GEANY_GBG_NON_FT, build_menu_prefs.number_non_ft_menu_items);
-	build_set_group_count(GEANY_GBG_EXEC, build_menu_prefs.number_exec_menu_items);
-	build_load_menu(config, GEANY_BCS_PREF, NULL);
 }
 
 
@@ -1130,7 +1127,7 @@ static void load_ui_session(GKeyFile *config)
  */
 void configuration_save_default_session(void)
 {
-	gchar *configfile = g_build_filename(app->configdir, PREFS_FILE, NULL);
+	gchar *configfile = g_build_filename(app->configdir, SESSION_FILE, NULL);
 	gchar *data;
 	GKeyFile *config = g_key_file_new();
 
@@ -1173,15 +1170,17 @@ void configuration_clear_default_session(void)
 /*
  * Only reload the session part of the default configuration
  */
-void configuration_reload_default_session(void)
+void configuration_load_default_session(void)
 {
 	gchar *configfile = g_build_filename(app->configdir, SESSION_FILE, NULL);
 	GKeyFile *config = g_key_file_new();
 
+	g_return_if_fail(default_session_files == NULL);
+
 	g_key_file_load_from_file(config, configfile, G_KEY_FILE_NONE, NULL);
 	g_free(configfile);
 
-	configuration_load_session_files(config, FALSE);
+	default_session_files = configuration_load_session_files(config);
 
 	g_key_file_free(config);
 }
@@ -1200,18 +1199,28 @@ gboolean read_config_file(gchar const *filename, ConfigPayload payload)
 	g_key_file_load_from_file(config, configfile, G_KEY_FILE_NONE, NULL);
 	g_free(configfile);
 
+	/* read stash prefs */
+	settings_action(config, SETTING_READ, payload);
+
 	switch (payload)
 	{
 		case PREFS:
 			load_dialog_prefs(config);
 			load_ui_prefs(config);
+
+			/* build menu, after stash prefs as it uses some of them */
+			build_set_group_count(GEANY_GBG_FT, build_menu_prefs.number_ft_menu_items);
+			build_set_group_count(GEANY_GBG_NON_FT, build_menu_prefs.number_non_ft_menu_items);
+			build_set_group_count(GEANY_GBG_EXEC, build_menu_prefs.number_exec_menu_items);
+			build_load_menu(config, GEANY_BCS_PREF, NULL);
 			/* this signal can be used e.g. to delay building UI elements until settings have been read */
 			g_signal_emit_by_name(geany_object, "load-settings", config);
 			break;
 		case SESSION:
 			project_load_prefs(config);
 			load_ui_session(config);
-			configuration_load_session_files(config, TRUE);
+			load_recent_files(config, ui_prefs.recent_queue, "recent_files");
+			load_recent_files(config, ui_prefs.recent_projects_queue, "recent_projects");
 			break;
 	}
 
@@ -1300,17 +1309,39 @@ static gboolean open_session_file(gchar **tmp, guint len)
 	return ret;
 }
 
+/* trigger a notebook page switch after unsetting main_status.opening_session_files
+ * for callbacks to run (and update window title, encoding settings, and so on)
+ */
+static gboolean switch_to_session_page(gpointer data)
+{
+	gint n_pages = gtk_notebook_get_n_pages(GTK_NOTEBOOK(main_widgets.notebook));
+	gint cur_page = gtk_notebook_get_current_page(GTK_NOTEBOOK(main_widgets.notebook));
+	gint target_page = session_notebook_page >= 0 ? session_notebook_page : cur_page;
+
+	if (n_pages > 0)
+	{
+		if (target_page != cur_page)
+			gtk_notebook_set_current_page(GTK_NOTEBOOK(main_widgets.notebook), target_page);
+		else
+			g_signal_emit_by_name(GTK_NOTEBOOK(main_widgets.notebook), "switch-page",
+			                      gtk_notebook_get_nth_page(GTK_NOTEBOOK(main_widgets.notebook), target_page),
+			                      target_page);
+	}
+	session_notebook_page = -1;
+
+	return G_SOURCE_REMOVE;
+}
 
 /* Open session files
  * Note: notebook page switch handler and adding to recent files list is always disabled
  * for all files opened within this function */
-void configuration_open_files(void)
+void configuration_open_files(GPtrArray *session_files)
 {
 	gint i;
 	gboolean failure = FALSE;
 
 	/* necessary to set it to TRUE for project session support */
-	main_status.opening_session_files = TRUE;
+	main_status.opening_session_files++;
 
 	i = file_prefs.tab_order_ltr ? 0 : (session_files->len - 1);
 	while (TRUE)
@@ -1340,26 +1371,25 @@ void configuration_open_files(void)
 	}
 
 	g_ptr_array_free(session_files, TRUE);
-	session_files = NULL;
 
 	if (failure)
 		ui_set_statusbar(TRUE, _("Failed to load one or more session files."));
 	else
-	{
-		/* explicitly trigger a notebook page switch after unsetting main_status.opening_session_files
-		 * for callbacks to run (and update window title, encoding settings, and so on) */
-		gint n_pages = gtk_notebook_get_n_pages(GTK_NOTEBOOK(main_widgets.notebook));
-		gint cur_page = gtk_notebook_get_current_page(GTK_NOTEBOOK(main_widgets.notebook));
-		gint target_page = session_notebook_page >= 0 ? session_notebook_page : cur_page;
+		g_idle_add(switch_to_session_page, NULL);
 
-		/* if target page is current page, switch to another page first to really trigger an event */
-		if (target_page == cur_page && n_pages > 0)
-			gtk_notebook_set_current_page(GTK_NOTEBOOK(main_widgets.notebook), (cur_page + 1) % n_pages);
+	main_status.opening_session_files--;
+}
 
-		main_status.opening_session_files = FALSE;
-		gtk_notebook_set_current_page(GTK_NOTEBOOK(main_widgets.notebook), target_page);
-	}
-	main_status.opening_session_files = FALSE;
+
+/* Open session files
+ * Note: notebook page switch handler and adding to recent files list is always disabled
+ * for all files opened within this function */
+void configuration_open_default_session(void)
+{
+	g_return_if_fail(default_session_files != NULL);
+
+	configuration_open_files(default_session_files);
+	default_session_files = NULL;
 }
 
 
@@ -1401,12 +1431,10 @@ void configuration_apply_settings(void)
 
 static gboolean save_configuration_cb(gpointer data)
 {
-	configuration_save();
 	if (app->project != NULL)
-	{
 		project_write_config();
-	}
-	document_list_update_idle_func_id = 0;
+	else
+		configuration_save_default_session();
 	return G_SOURCE_REMOVE;
 }
 
@@ -1422,17 +1450,16 @@ static void document_list_changed_cb(GObject *obj, GeanyDocument *doc, gpointer 
 		!main_status.opening_session_files &&
 		!main_status.quitting)
 	{
-		if (document_list_update_idle_func_id == 0)
-		{
-			document_list_update_idle_func_id = g_idle_add(save_configuration_cb, NULL);
-		}
+		g_idle_remove_by_data(save_configuration_cb);
+		g_idle_add(save_configuration_cb, save_configuration_cb);
 	}
 }
 
 
 void configuration_init(void)
 {
-	keyfile_groups = g_ptr_array_new();
+	keyfile_groups[PREFS] = g_ptr_array_new_with_free_func((GDestroyNotify) stash_group_free);
+	keyfile_groups[SESSION] = g_ptr_array_new_with_free_func((GDestroyNotify) stash_group_free);
 	pref_groups = g_ptr_array_new();
 	init_pref_groups();
 
@@ -1444,14 +1471,9 @@ void configuration_init(void)
 
 void configuration_finalize(void)
 {
-	guint i;
-	StashGroup *group;
-
 	g_signal_handlers_disconnect_by_func(geany_object, G_CALLBACK(document_list_changed_cb), NULL);
 
-	foreach_ptr_array(group, i, keyfile_groups)
-		stash_group_free(group);
-
-	g_ptr_array_free(keyfile_groups, TRUE);
 	g_ptr_array_free(pref_groups, TRUE);
+	g_ptr_array_free(keyfile_groups[SESSION], TRUE);
+	g_ptr_array_free(keyfile_groups[PREFS], TRUE);
 }

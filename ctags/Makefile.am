@@ -11,52 +11,97 @@ AM_CFLAGS = \
 noinst_LTLIBRARIES = libctags.la
 
 parsers = \
+	parsers/cxx/cxx.c \
+	parsers/cxx/cxx_debug.c \
+	parsers/cxx/cxx_debug.h \
+	parsers/cxx/cxx_debug_type.c \
+	parsers/cxx/cxx_keyword.c \
+	parsers/cxx/cxx_keyword.h \
+	parsers/cxx/cxx_parser_block.c \
+	parsers/cxx/cxx_parser.c \
+	parsers/cxx/cxx_parser_function.c \
+	parsers/cxx/cxx_parser.h \
+	parsers/cxx/cxx_parser_internal.h \
+	parsers/cxx/cxx_parser_lambda.c \
+	parsers/cxx/cxx_parser_namespace.c \
+	parsers/cxx/cxx_parser_template.c \
+	parsers/cxx/cxx_parser_tokenizer.c \
+	parsers/cxx/cxx_parser_typedef.c \
+	parsers/cxx/cxx_parser_using.c \
+	parsers/cxx/cxx_parser_variable.c \
+	parsers/cxx/cxx_qtmoc.c \
+	parsers/cxx/cxx_scope.c \
+	parsers/cxx/cxx_scope.h \
+	parsers/cxx/cxx_subparser.c \
+	parsers/cxx/cxx_subparser.h \
+	parsers/cxx/cxx_subparser_internal.h \
+	parsers/cxx/cxx_tag.c \
+	parsers/cxx/cxx_tag.h \
+	parsers/cxx/cxx_token.c \
+	parsers/cxx/cxx_token_chain.c \
+	parsers/cxx/cxx_token_chain.h \
+	parsers/cxx/cxx_token.h \
+	parsers/cpreprocessor.c \
+	parsers/cpreprocessor.h \
 	parsers/abaqus.c \
 	parsers/abc.c \
+	parsers/ada.c \
 	parsers/asciidoc.c \
-	parsers/geany_asm.c \
-	parsers/geany_basic.c \
+	parsers/asm.c \
+	parsers/basic.c \
 	parsers/bibtex.c \
 	parsers/geany_c.c \
+	parsers/clojure.c \
 	parsers/cobol.c \
-	parsers/geany_iniconf.c \
+	parsers/iniconf.c \
+	parsers/iniconf.h \
 	parsers/css.c \
-	parsers/geany_diff.c \
+	parsers/diff.c \
 	parsers/geany_docbook.c \
 	parsers/erlang.c \
 	parsers/flex.c \
-	parsers/geany_fortran.c \
-	parsers/geany_go.c \
+	parsers/fortran.c \
+	parsers/gdscript.c \
+	parsers/go.c \
 	parsers/haskell.c \
 	parsers/haxe.c \
-	parsers/geany_html.c \
-	parsers/geany_jscript.c \
+	parsers/html.c \
+	parsers/jscript.c \
 	parsers/json.c \
 	parsers/julia.c \
 	parsers/geany_lcpp.c \
 	parsers/geany_lcpp.h \
-	parsers/geany_lua.c \
-	parsers/geany_make.c \
-	parsers/geany_markdown.c \
+	parsers/lisp.c \
+	parsers/lua.c \
+	parsers/make.c \
+	parsers/make.h \
+	parsers/markdown.c \
+	parsers/markdown.h \
 	parsers/geany_matlab.c \
-	parsers/geany_nsis.c \
-	parsers/geany_objc.c \
-	parsers/geany_pascal.c \
-	parsers/geany_perl.c \
-	parsers/geany_php.c \
+	parsers/nsis.c \
+	parsers/objc.c \
+	parsers/pascal.c \
+	parsers/perl.c \
+	parsers/perl.h \
+	parsers/php.c \
 	parsers/powershell.c \
-	parsers/geany_python.c \
-	parsers/geany_r.c \
+	parsers/python.c \
+	parsers/r.c \
+	parsers/r.h \
 	parsers/rst.c \
-	parsers/geany_ruby.c \
-	parsers/geany_rust.c \
-	parsers/geany_sh.c \
-	parsers/geany_sql.c \
-	parsers/geany_tcl.c \
-	parsers/geany_tex.c \
+	parsers/ruby.c \
+	parsers/rust.c \
+	parsers/sh.c \
+	parsers/sql.c \
+	parsers/tcl.c \
+	parsers/tcl.h \
+	parsers/tcloo.c \
+	parsers/tex.c \
+	parsers/tex.h \
 	parsers/txt2tags.c \
-	parsers/geany_verilog.c \
-	parsers/geany_vhdl.c
+	parsers/typescript.c \
+	parsers/verilog.c \
+	parsers/vhdl.c
 
 # skip cmd.c and mini-geany.c which define main()
 # also skip lregex-pcre2.c which we don't use

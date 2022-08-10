@@ -68,7 +68,7 @@
 	"filetype: %f      " \
 	"scope: %S")
 
-GeanyInterfacePrefs	interface_prefs;
+GEANY_EXPORT_SYMBOL GeanyInterfacePrefs interface_prefs;
 GeanyMainWidgets	main_widgets;
 
 UIPrefs			ui_prefs;
@@ -227,7 +227,7 @@ static gchar *create_statusbar_statistics(GeanyDocument *doc,
 				break;
 			case 's':
 			{
-				gint len = sci_get_selected_text_length(sci) - 1;
+				gint len = sci_get_selected_text_length2(sci);
 				/* check if whole lines are selected */
 				if (!len || sci_get_col_from_position(sci,
 						sci_get_selection_start(sci)) != 0 ||
@@ -241,7 +241,7 @@ static gchar *create_statusbar_statistics(GeanyDocument *doc,
 			}
 			case 'n' :
 				g_string_append_printf(stats_str, "%d",
-					sci_get_selected_text_length(doc->editor->sci) - 1);
+					sci_get_selected_text_length2(doc->editor->sci));
 				break;
 			case 'w':
 				/* RO = read-only */
@@ -728,7 +728,7 @@ static void insert_date(GeanyDocument *doc, gint pos, const gchar *date_style)
 	{
 		gchar *str = dialogs_show_input(_("Custom Date Format"), GTK_WINDOW(main_widgets.window),
 				_("Enter here a custom date and time format. "
-				"You can use any conversion specifiers which can be used with the ANSI C strftime function."),
+				"For a list of available conversion specifiers see https://docs.gtk.org/glib/method.DateTime.format.html."),
 				ui_prefs.custom_date_format);
 		if (str)
 			SETPTR(ui_prefs.custom_date_format, str);
@@ -1997,6 +1997,21 @@ static gchar *run_file_chooser(const gchar *title, GtkFileChooserAction action,
 	return ret_path;
 }
 #endif
+
+
+gchar *ui_get_project_directory(const gchar *path)
+{
+	gchar *utf8_path;
+	const gchar *title = _("Select Project Base Path");
+
+#ifdef G_OS_WIN32
+	utf8_path = win32_show_folder_dialog(ui_widgets.prefs_dialog, title, path);
+#else
+	utf8_path = run_file_chooser(title, GTK_FILE_CHOOSER_ACTION_SELECT_FOLDER, path);
+#endif
+
+	return utf8_path;
+}
 
 
 static void ui_path_box_open_clicked(GtkButton *button, gpointer user_data)

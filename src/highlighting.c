@@ -1000,6 +1000,7 @@ void highlighting_init_styles(guint filetype_idx, GKeyFile *config, GKeyFile *co
 	{
 		init_styleset_case(ABAQUS);
 		init_styleset_case(ADA);
+		init_styleset_case(ASCIIDOC);
 		init_styleset_case(ASM);
 		init_styleset_case(BASIC);
 		init_styleset_case(BATCH);
@@ -1015,10 +1016,10 @@ void highlighting_init_styles(guint filetype_idx, GKeyFile *config, GKeyFile *co
 		init_styleset_case(LISP);
 		init_styleset_case(ERLANG);
 		init_styleset_case(DOCBOOK);
-		init_styleset_case(FERITE);
 		init_styleset_case(F77);
 		init_styleset_case(FORTH);
 		init_styleset_case(FORTRAN);
+		init_styleset_case(GDSCRIPT);
 		init_styleset_case(GO);
 		init_styleset_case(HASKELL);
 		init_styleset_case(HAXE);
@@ -1090,6 +1091,7 @@ void highlighting_set_styles(ScintillaObject *sci, GeanyFiletype *ft)
 	{
 		styleset_case(ABAQUS);
 		styleset_case(ADA);
+		styleset_case(ASCIIDOC);
 		styleset_case(ASM);
 		styleset_case(BASIC);
 		styleset_case(BATCH);
@@ -1105,10 +1107,10 @@ void highlighting_set_styles(ScintillaObject *sci, GeanyFiletype *ft)
 		styleset_case(LISP);
 		styleset_case(ERLANG);
 		styleset_case(DOCBOOK);
-		styleset_case(FERITE);
 		styleset_case(F77);
 		styleset_case(FORTH);
 		styleset_case(FORTRAN);
+		styleset_case(GDSCRIPT);
 		styleset_case(GO);
 		styleset_case(HASKELL);
 		styleset_case(HAXE);
@@ -1435,6 +1437,13 @@ gboolean highlighting_is_string_style(gint lexer, gint style)
 				style == SCE_P_FTRIPLE ||
 				style == SCE_P_FTRIPLEDOUBLE ||
 				style == SCE_P_STRINGEOL);
+
+		case SCLEX_GDSCRIPT:
+			return (style == SCE_GD_STRING ||
+				style == SCE_GD_TRIPLE ||
+				style == SCE_GD_TRIPLEDOUBLE ||
+				style == SCE_GD_CHARACTER ||
+				style == SCE_GD_STRINGEOL);
 
 		case SCLEX_F77:
 		case SCLEX_FORTRAN:
@@ -1855,6 +1864,10 @@ gboolean highlighting_is_comment_style(gint lexer, gint style)
 		case SCLEX_MARKDOWN:
 			/* there is no comment type in those lexers, listing here just for completeness */
 			return FALSE;
+			
+		case SCLEX_GDSCRIPT:
+			return (style == SCE_GD_COMMENTLINE ||
+				style == SCE_GD_COMMENTBLOCK);
 	}
 	return FALSE;
 }

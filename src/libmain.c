@@ -46,6 +46,7 @@
 #include "navqueue.h"
 #include "notebook.h"
 #include "plugins.h"
+#include "projectprivate.h"
 #include "prefs.h"
 #include "printing.h"
 #include "sidebar.h"
@@ -304,10 +305,10 @@ static void main_init(void)
 
 const gchar *main_get_version_string(void)
 {
-	static gchar full[] = VERSION " (git >= " REVISION ")";
+	static gchar full[] = PACKAGE_VERSION " (git >= " REVISION ")";
 
 	if (utils_str_equal(REVISION, "-1"))
-		return VERSION;
+		return PACKAGE_VERSION;
 	else
 		return full;
 }
@@ -958,7 +959,7 @@ static void load_startup_files(gint argc, gchar **argv)
 		main_load_project_from_command_line(filename, FALSE);
 		argc--, argv++;
 		/* force session load if using project-based session files */
-		load_session = project_prefs.project_session;
+		load_session = TRUE;
 		g_free(filename);
 	}
 
@@ -971,13 +972,23 @@ static void load_startup_files(gint argc, gchar **argv)
 	{
 		if (app->project == NULL)
 			load_session_project_file();
+		if (app->project == NULL)
+			configuration_load_default_session();
 		load_session = TRUE;
 	}
 
 	if (load_session)
 	{
 		/* load session files into tabs, as they are found in the session_files variable */
-		configuration_open_files();
+		if (app->project != NULL)
+		{
+			configuration_open_files(app->project->priv->session_files);
+			app->project->priv->session_files = NULL;
+		}
+		else
+		{
+			configuration_open_default_session();
+		}
 
 		if (gtk_notebook_get_n_pages(GTK_NOTEBOOK(main_widgets.notebook)) == 0)
 		{
@@ -1008,19 +1019,11 @@ static const gchar *get_locale(void)
 
 
 GEANY_EXPORT_SYMBOL
-gint main_lib(gint argc, gchar **argv)
+void main_init_headless(void)
 {
-	GeanyDocument *doc;
-	gint config_dir_result;
-	const gchar *locale;
-	gchar *utf8_configdir;
-	gchar *os_info;
-
 #if ! GLIB_CHECK_VERSION(2, 36, 0)
 	g_type_init();
 #endif
-
-	log_handlers_init();
 
 	app = g_new0(GeanyApp, 1);
 	memset(&main_status, 0, sizeof(GeanyStatus));
@@ -1033,6 +1036,21 @@ gint main_lib(gint argc, gchar **argv)
 	memset(&template_prefs, 0, sizeof(GeanyTemplatePrefs));
 	memset(&ui_prefs, 0, sizeof(UIPrefs));
 	memset(&ui_widgets, 0, sizeof(UIWidgets));
+}
+
+
+GEANY_EXPORT_SYMBOL
+gint main_lib(gint argc, gchar **argv)
+{
+	GeanyDocument *doc;
+	gint config_dir_result;
+	const gchar *locale;
+	gchar *utf8_configdir;
+	gchar *os_info;
+
+	main_init_headless();
+
+	log_handlers_init();
 
 	setup_paths();
 
@@ -1195,9 +1213,9 @@ gint main_lib(gint argc, gchar **argv)
 	tools_create_insert_custom_command_menu_items();
 
 	/* load any command line files or session files */
-	main_status.opening_session_files = TRUE;
+	main_status.opening_session_files++;
 	load_startup_files(argc, argv);
-	main_status.opening_session_files = FALSE;
+	main_status.opening_session_files--;
 
 	/* open a new file if no other file was opened */
 	document_new_file_if_non_open();

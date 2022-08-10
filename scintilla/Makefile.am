@@ -14,6 +14,7 @@ lexilla/include/SciLexer.h
 LEXER_SRCS =                           \
 lexilla/lexers/LexAbaqus.cxx           \
 lexilla/lexers/LexAda.cxx              \
+lexilla/lexers/LexAsciidoc.cxx         \
 lexilla/lexers/LexAsm.cxx              \
 lexilla/lexers/LexBash.cxx             \
 lexilla/lexers/LexBasic.cxx            \
@@ -29,6 +30,7 @@ lexilla/lexers/LexDiff.cxx             \
 lexilla/lexers/LexErlang.cxx           \
 lexilla/lexers/LexForth.cxx            \
 lexilla/lexers/LexFortran.cxx          \
+lexilla/lexers/LexGDScript.cxx         \
 lexilla/lexers/LexHTML.cxx             \
 lexilla/lexers/LexHaskell.cxx          \
 lexilla/lexers/LexJulia.cxx            \
@@ -58,7 +60,6 @@ lexilla/lexers/LexVerilog.cxx          \
 lexilla/lexers/LexYAML.cxx
 
 LEXLIB_SRCS =                          \
-lexilla/include/LexicalStyles.iface    \
 lexilla/include/Lexilla.h              \
 lexilla/include/SciLexer.h             \
 lexilla/lexlib/Accessor.cxx            \
