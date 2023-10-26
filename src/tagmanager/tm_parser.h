@@ -42,7 +42,8 @@ typedef enum
 	tm_tag_macro_with_arg_t = 131072, /**< Parameterized macro */
 	tm_tag_local_var_t = 262144, /**< Local variable (inside function) */
 	tm_tag_other_t = 524288, /**< Other (non C/C++/Java tag) */
-	tm_tag_max_t = 1048575 /**< Maximum value of TMTagType */
+	tm_tag_include_t = 1048576, /**< C/C++ included header file name */
+	tm_tag_max_t = 2097151 /**< Maximum value of TMTagType */
 } TMTagType;
 
 
@@ -116,6 +117,8 @@ enum
 	TM_PARSER_CLOJURE,
 	TM_PARSER_LISP,
 	TM_PARSER_TYPESCRIPT,
+	TM_PARSER_BATCH,
+	TM_PARSER_AUTOIT,
 	TM_PARSER_COUNT
 };
 
@@ -150,7 +153,7 @@ gint tm_parser_scope_autocomplete_suffix(TMParserType lang, const gchar *str);
 
 const gchar *tm_parser_get_constructor_method(TMParserType lang);
 
-gboolean tm_parser_is_anon_name(TMParserType lang, gchar *name);
+gboolean tm_parser_is_anon_name(TMParserType lang, const gchar *name);
 
 gchar *tm_parser_update_scope(TMParserType lang, gchar *scope);
 
@@ -158,7 +161,8 @@ gboolean tm_parser_enable_role(TMParserType lang, gchar kind);
 
 gboolean tm_parser_enable_kind(TMParserType lang, gchar kind);
 
-gchar *tm_parser_format_variable(TMParserType lang, const gchar *name, const gchar *type);
+gchar *tm_parser_format_variable(TMParserType lang, const gchar *name, const gchar *type,
+	const gchar *scope);
 
 gchar *tm_parser_format_function(TMParserType lang, const gchar *fname, const gchar *args,
 	const gchar *retval, const gchar *scope);

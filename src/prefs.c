@@ -88,6 +88,7 @@ static void on_toolbar_show_toggled(GtkToggleButton *togglebutton, gpointer user
 static void on_show_notebook_tabs_toggled(GtkToggleButton *togglebutton, gpointer user_data);
 static void on_enable_plugins_toggled(GtkToggleButton *togglebutton, gpointer user_data);
 static void on_use_folding_toggled(GtkToggleButton *togglebutton, gpointer user_data);
+static void on_check_line_end_toggled(GtkToggleButton *togglebutton, gpointer user_data);
 static void on_open_encoding_toggled(GtkToggleButton *togglebutton, gpointer user_data);
 static void on_sidebar_visible_toggled(GtkToggleButton *togglebutton, gpointer user_data);
 static void on_prefs_print_radio_button_toggled(GtkToggleButton *togglebutton, gpointer user_data);
@@ -213,8 +214,6 @@ static void kb_tree_view_change_button_clicked_cb(GtkWidget *button, KbData *kbd
 static void kb_show_popup_menu(KbData *kbdata, GtkWidget *widget, GdkEventButton *event)
 {
 	static GtkWidget *menu = NULL;
-	guint button;
-	guint32 event_time;
 
 	if (menu == NULL)
 	{
@@ -235,18 +234,7 @@ static void kb_show_popup_menu(KbData *kbdata, GtkWidget *widget, GdkEventButton
 		gtk_menu_attach_to_widget(GTK_MENU(menu), widget, NULL);
 	}
 
-	if (event != NULL)
-	{
-		button = event->button;
-		event_time = event->time;
-	}
-	else
-	{
-		button = 0;
-		event_time = gtk_get_current_event_time();
-	}
-
-	ui_menu_popup(GTK_MENU(menu), NULL, NULL, button, event_time);
+	gtk_menu_popup_at_pointer(GTK_MENU(menu), (GdkEvent *) event);
 }
 
 
@@ -590,6 +578,10 @@ static void prefs_init_dialog(void)
 
 	widget = ui_lookup_widget(ui_widgets.prefs_dialog, "check_line_end");
 	gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(widget), editor_prefs.show_line_endings);
+
+	widget = ui_lookup_widget(ui_widgets.prefs_dialog, "check_line_endings_only_when_differ");
+	gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(widget),
+		editor_prefs.show_line_endings_only_when_differ);
 
 	widget = ui_lookup_widget(ui_widgets.prefs_dialog, "check_line_numbers");
 	gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(widget), editor_prefs.show_linenumber_margin);
@@ -960,6 +952,8 @@ on_prefs_dialog_response(GtkDialog *dialog, gint response, gpointer user_data)
 		widget = ui_lookup_widget(ui_widgets.prefs_dialog, "check_statusbar_visible");
 		interface_prefs.statusbar_visible = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(widget));
 
+		widget = ui_lookup_widget(ui_widgets.prefs_dialog, "spin_tab_label_len");
+		interface_prefs.tab_label_len = gtk_spin_button_get_value_as_int(GTK_SPIN_BUTTON(widget));
 
 		/* Toolbar settings */
 		widget = ui_lookup_widget(ui_widgets.prefs_dialog, "check_toolbar_show");
@@ -1062,6 +1056,10 @@ on_prefs_dialog_response(GtkDialog *dialog, gint response, gpointer user_data)
 
 		widget = ui_lookup_widget(ui_widgets.prefs_dialog, "check_line_end");
 		editor_prefs.show_line_endings = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(widget));
+
+		widget = ui_lookup_widget(ui_widgets.prefs_dialog, "check_line_endings_only_when_differ");
+		editor_prefs.show_line_endings_only_when_differ = gtk_toggle_button_get_active(
+			GTK_TOGGLE_BUTTON(widget));
 
 		widget = ui_lookup_widget(ui_widgets.prefs_dialog, "check_line_numbers");
 		editor_prefs.show_linenumber_margin = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(widget));
@@ -1285,6 +1283,8 @@ on_prefs_dialog_response(GtkDialog *dialog, gint response, gpointer user_data)
 				editor_apply_update_prefs(documents[i]->editor);
 				if (! editor_prefs.folding)
 					editor_unfold_all(documents[i]->editor);
+
+				document_update_tab_label(documents[i]);
 			}
 		}
 		ui_document_show_hide(NULL);
@@ -1294,6 +1294,7 @@ on_prefs_dialog_response(GtkDialog *dialog, gint response, gpointer user_data)
 		ui_save_buttons_toggle((doc != NULL) ? doc->changed : FALSE);
 		msgwin_show_hide_tabs();
 		ui_update_statusbar(doc, -1);
+		ui_set_window_title(doc);
 
 		/* store all settings */
 		configuration_save();
@@ -1526,6 +1527,14 @@ static void on_use_folding_toggled(GtkToggleButton *togglebutton, gpointer user_
 	gboolean sens = gtk_toggle_button_get_active(togglebutton);
 
 	gtk_widget_set_sensitive(ui_lookup_widget(ui_widgets.prefs_dialog, "check_unfold_children"), sens);
+}
+
+
+static void on_check_line_end_toggled(GtkToggleButton *togglebutton, gpointer user_data)
+{
+	gboolean sens = gtk_toggle_button_get_active(togglebutton);
+
+	gtk_widget_set_sensitive(ui_lookup_widget(ui_widgets.prefs_dialog, "check_line_endings_only_when_differ"), sens);
 }
 
 
@@ -1802,6 +1811,8 @@ void prefs_show_dialog(void)
 				"toggled", G_CALLBACK(on_show_notebook_tabs_toggled), NULL);
 		g_signal_connect(ui_lookup_widget(ui_widgets.prefs_dialog, "check_folding"),
 				"toggled", G_CALLBACK(on_use_folding_toggled), NULL);
+		g_signal_connect(ui_lookup_widget(ui_widgets.prefs_dialog, "check_line_end"),
+				"toggled", G_CALLBACK(on_check_line_end_toggled), NULL);
 		g_signal_connect(ui_lookup_widget(ui_widgets.prefs_dialog, "check_open_encoding"),
 				"toggled", G_CALLBACK(on_open_encoding_toggled), NULL);
 		g_signal_connect(ui_lookup_widget(ui_widgets.prefs_dialog, "check_sidebar_visible"),

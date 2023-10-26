@@ -20,13 +20,13 @@
 
 /** @file sciwrappers.h
  * Wrapper functions for the Scintilla editor widget @c SCI_* messages.
- * You should also check the http://scintilla.org documentation, as it is more detailed.
+ * You should also check the https://scintilla.org documentation, as it is more detailed.
  *
  * To get Scintilla notifications, use the
  * @link pluginsignals.c @c "editor-notify" signal @endlink.
  *
  * @note These functions were originally from the cssed project
- * (http://cssed.sf.net, thanks).
+ * (https://sourceforge.net/projects/cssed/, thanks).
  * @see scintilla_send_message().
  */
 
@@ -37,6 +37,7 @@
 #include "sciwrappers.h"
 #include <Lexilla.h> /* ILexer5 */
 
+#include "editor.h"
 #include "utils.h"
 
 #include <string.h>
@@ -269,6 +270,30 @@ gint sci_get_eol_mode(ScintillaObject *sci)
 void sci_set_eol_mode(ScintillaObject *sci, gint eolmode)
 {
 	SSM(sci, SCI_SETEOLMODE, (uptr_t) eolmode, 0);
+	sci_set_eol_representation_characters(sci, eolmode);
+}
+
+
+/* Show only EOL characters if they differ from the file default EOL character */
+void sci_set_eol_representation_characters(ScintillaObject *sci, gint new_eolmode)
+{
+	const gchar *eolchar = NULL;
+	const gchar *new_eolchar = NULL;
+	gboolean visible = FALSE;
+	gint *eolmode;
+	gint appearance;
+	gint eol_modes[3] = {SC_EOL_CRLF, SC_EOL_CR, SC_EOL_LF};
+
+	foreach_c_array(eolmode, eol_modes, 3)
+	{
+		visible = (*eolmode != new_eolmode) || ! editor_prefs.show_line_endings_only_when_differ;
+		new_eolchar = (visible) ? utils_get_eol_short_name(*eolmode) : "";
+		appearance = (visible) ? SC_REPRESENTATION_BLOB : SC_REPRESENTATION_PLAIN;
+		eolchar = utils_get_eol_char(*eolmode);
+
+		SSM(sci, SCI_SETREPRESENTATION, (sptr_t) eolchar, (sptr_t) new_eolchar);
+		SSM(sci, SCI_SETREPRESENTATIONAPPEARANCE, (sptr_t) eolchar, appearance);
+	}
 }
 
 
@@ -676,7 +701,14 @@ void sci_set_lexer(ScintillaObject *sci, guint lexer_id)
 	gint old = sci_get_lexer(sci);
 
 	/* TODO, LexerNameFromID() is already deprecated */
-	ILexer5 *lexer = CreateLexer(LexerNameFromID(lexer_id));
+	const char *lexer_name = LexerNameFromID(lexer_id);
+	if (! lexer_name)
+	{
+		g_warning("Failed to find lexer for ID %u", lexer_id);
+		return;
+	}
+
+	ILexer5 *lexer = CreateLexer(lexer_name);
 
 	SSM(sci, SCI_SETILEXER, 0, (uintptr_t) lexer);
 
@@ -1194,7 +1226,7 @@ void sci_set_readonly(ScintillaObject *sci, gboolean readonly)
 /** Sends Scintilla commands without any parameters.
  * @param sci The Scintilla @c GtkWidget.
  * @param cmd @c SCI_COMMAND.
- * @see http://scintilla.org for the documentation.
+ * @see https://scintilla.org for the documentation.
  *
  *  @since 0.16
  */

@@ -346,7 +346,7 @@ static gboolean on_editor_button_press_event(GtkWidget *widget, GdkEventButton *
 		g_signal_emit_by_name(geany_object, "update-editor-menu",
 			current_word, editor_info.click_pos, doc);
 
-		ui_menu_popup(GTK_MENU(main_widgets.editor_menu), NULL, NULL, event->button, event->time);
+		gtk_menu_popup_at_pointer(GTK_MENU(main_widgets.editor_menu), (GdkEvent *) event);
 		return TRUE;
 	}
 	return FALSE;
@@ -702,7 +702,6 @@ static gboolean autocomplete_scope(GeanyEditor *editor, const gchar *root, gsize
 	ScintillaObject *sci = editor->sci;
 	gint pos = sci_get_current_position(editor->sci);
 	gint line = sci_get_current_line(editor->sci) + 1;
-	gchar typed = sci_get_char_at(sci, pos - 1);
 	gchar brace_char;
 	gchar *name;
 	GeanyFiletype *ft = editor->document->file_type;
@@ -722,9 +721,6 @@ static gboolean autocomplete_scope(GeanyEditor *editor, const gchar *root, gsize
 		/* allow for a space between word and operator */
 		while (pos > 0 && isspace(sci_get_char_at(sci, pos - 1)))
 			pos--;
-
-		if (pos > 0)
-			typed = sci_get_char_at(sci, pos - 1);
 	}
 
 	autocomplete_suffix_len = scope_autocomplete_suffix(sci, ft->lang, pos,
@@ -1103,7 +1099,7 @@ static gboolean on_editor_notify(G_GNUC_UNUSED GObject *object, GeanyEditor *edi
 			/* Visible lines are only laid out accurately just before painting,
 			 * so we need to only call editor_scroll_to_line here, because the document
 			 * may have line wrapping and folding enabled.
-			 * http://scintilla.sourceforge.net/ScintillaDoc.html#LineWrapping
+			 * https://scintilla.sourceforge.io/ScintillaDoc.html#LineWrapping
 			 * This is important e.g. when loading a session and switching pages
 			 * and having the cursor scroll in view. */
 			 /* FIXME: Really we want to do this just before painting, not after it
@@ -1843,6 +1839,53 @@ static gint find_start_bracket(ScintillaObject *sci, gint pos)
 }
 
 
+static GPtrArray *get_constructor_tags(GeanyFiletype *ft, TMTag *tag,
+									   const gchar *constructor_method)
+{
+	if (constructor_method && (tag->type == tm_tag_class_t || tag->type == tm_tag_struct_t))
+	{
+		const TMTagType arg_types = tm_tag_function_t | tm_tag_prototype_t |
+			tm_tag_method_t | tm_tag_macro_with_arg_t;
+		const gchar *scope_sep = tm_parser_scope_separator(ft->lang);
+		gchar *scope = EMPTY(tag->scope) ? g_strdup(tag->name) :
+			g_strjoin(scope_sep, tag->scope, tag->name, NULL);
+		GPtrArray *constructor_tags;
+
+		constructor_tags = tm_workspace_find(constructor_method, scope, arg_types, NULL, ft->lang);
+		g_free(scope);
+		if (constructor_tags->len != 0)
+		{	/* found constructor tag, so use it instead of the class tag */
+			return constructor_tags;
+		}
+		else
+		{
+			g_ptr_array_free(constructor_tags, TRUE);
+		}
+	}
+	return NULL;
+}
+
+
+static void update_tag_name_and_scope_for_calltip(const gchar *word, TMTag *tag,
+												  const gchar *constructor_method,
+												  const gchar **tag_name, const gchar **scope)
+{
+	if (tag_name == NULL || scope == NULL)
+		return;
+
+	/* Remove scope and replace name with the current calltip word if the current tag
+	 * is the constructor method of the current calltip word, e.g. for Python:
+	 * "SomeClass.__init__ (self, arg1, ...)" will be changed to "SomeClass (self, arg1, ...)" */
+	if (constructor_method &&
+		utils_str_equal(constructor_method, tag->name) &&
+		!utils_str_equal(word, tag->name))
+	{
+		*tag_name = word;
+		*scope = NULL;
+	}
+}
+
+
 static gchar *find_calltip(const gchar *word, GeanyFiletype *ft)
 {
 	const gchar *constructor_method;
@@ -1865,21 +1908,13 @@ static gchar *find_calltip(const gchar *word, GeanyFiletype *ft)
 
 	/* user typed e.g. 'a = Classname(' in Python so lookup __init__() arguments */
 	constructor_method = tm_parser_get_constructor_method(tag->lang);
-	if (constructor_method && (tag->type == tm_tag_class_t || tag->type == tm_tag_struct_t))
+	if (constructor_method)
 	{
-		const TMTagType arg_types = tm_tag_function_t | tm_tag_prototype_t |
-			tm_tag_method_t | tm_tag_macro_with_arg_t;
-		const gchar *scope_sep = tm_parser_scope_separator(ft->lang);
-		gchar *scope = EMPTY(tag->scope) ? g_strdup(tag->name) :
-			g_strjoin(scope_sep, tag->scope, tag->name, NULL);
-
-		g_ptr_array_free(tags, TRUE);
-		tags = tm_workspace_find(constructor_method, scope, arg_types, NULL, ft->lang);
-		g_free(scope);
-		if (tags->len == 0)
+		GPtrArray *constructor_tags = get_constructor_tags(ft, tag, constructor_method);
+		if (constructor_tags)
 		{
 			g_ptr_array_free(tags, TRUE);
-			return NULL;
+			tags = constructor_tags;
 		}
 	}
 
@@ -1919,9 +1954,13 @@ static gchar *find_calltip(const gchar *word, GeanyFiletype *ft)
 
 		if (str == NULL)
 		{
-			gchar *f = tm_parser_format_function(tag->lang, tag->name,
-				tag->arglist, tag->var_type, tag->scope);
-			str = g_string_new(NULL);
+			const gchar *tag_name = tag->name;
+			const gchar *scope = tag->scope;
+			gchar *f;
+
+			update_tag_name_and_scope_for_calltip(word, tag, constructor_method, &tag_name, &scope);
+			f = tm_parser_format_function(tag->lang, tag_name, tag->arglist, tag->var_type, scope);
+ 			str = g_string_new(NULL);
 			if (calltip.tag_index > 0)
 				g_string_prepend(str, "\001 ");	/* up arrow */
 			g_string_append(str, f);
@@ -3492,8 +3531,8 @@ static void auto_multiline(GeanyEditor *editor, gint cur_line)
 	if (sci_get_style_at(sci, indent_pos) == style || indent_pos >= sci_get_length(sci))
 	{
 		gchar *previous_line = sci_get_line(sci, cur_line - 1);
-		/* the type of comment, '*' (C/C++/Java), '+' and the others (D) */
-		const gchar *continuation = "*";
+		/* the type of comment, '*' (C/C++/Java), '+' D comment that nests */
+		const gchar *continuation = (style == SCE_D_COMMENTNESTED) ? "+" : "*";
 		const gchar *whitespace = ""; /* to hold whitespace if needed */
 		gchar *result;
 		gint len = strlen(previous_line);
@@ -3526,10 +3565,13 @@ static void auto_multiline(GeanyEditor *editor, gint cur_line)
 		{ /* we are on the second line of a multi line comment, so we have to insert white space */
 			whitespace = " ";
 		}
-
-		if (style == SCE_D_COMMENTNESTED)
-			continuation = "+"; /* for nested comments in D */
-
+		else if (!(g_str_has_prefix(previous_line + i, continuation) &&
+			(i + 1 == len || isspace(previous_line[i + 1]))))
+		{
+			// previous line isn't formatted so abort
+			g_free(previous_line);
+			return;
+		}
 		result = g_strconcat(whitespace, continuation, " ", NULL);
 		sci_add_text(sci, result);
 		g_free(result);
@@ -4646,7 +4688,7 @@ void editor_set_indent(GeanyEditor *editor, GeanyIndentType type, gint width)
 	SSM(sci, SCI_SETINDENT, width, 0);
 
 	/* remove indent spaces on backspace, if using any spaces to indent */
-	SSM(sci, SCI_SETBACKSPACEUNINDENTS, type != GEANY_INDENT_TYPE_TABS, 0);
+	SSM(sci, SCI_SETBACKSPACEUNINDENTS, editor_prefs.backspace_unindent && (type != GEANY_INDENT_TYPE_TABS), 0);
 }
 
 
@@ -4700,8 +4742,12 @@ gboolean editor_goto_pos(GeanyEditor *editor, gint pos, gboolean mark)
 	sci_goto_pos(editor->sci, pos, TRUE);
 	editor->scroll_percent = 0.25F;
 
-	/* finally switch to the page */
-	document_show_tab(editor->document);
+	/* switch to the page, via idle callback in case of batch-opening */
+	if (main_status.opening_session_files)
+		document_show_tab_idle(editor->document);
+	else
+		document_show_tab(editor->document);
+
 	return TRUE;
 }
 
@@ -4909,14 +4955,6 @@ static ScintillaObject *create_new_sci(GeanyEditor *editor)
 
 	/* input method editor's candidate window behaviour */
 	SSM(sci, SCI_SETIMEINTERACTION, editor_prefs.ime_interaction, 0);
-
-#ifdef GDK_WINDOWING_QUARTZ
-# if ! GTK_CHECK_VERSION(3,16,0)
-	/* "retina" (HiDPI) display support on OS X - requires disabling buffered draw
-	 * on older GTK versions */
-	SSM(sci, SCI_SETBUFFEREDDRAW, 0, 0);
-# endif
-#endif
 
 	/* only connect signals if this is for the document notebook, not split window */
 	if (editor->sci == NULL)
@@ -5148,11 +5186,21 @@ void editor_apply_update_prefs(GeanyEditor *editor)
 	sci_set_visible_eols(sci, editor_prefs.show_line_endings);
 	sci_set_symbol_margin(sci, editor_prefs.show_markers_margin);
 	sci_set_line_numbers(sci, editor_prefs.show_linenumber_margin);
+	sci_set_eol_representation_characters(sci, sci_get_eol_mode(sci));
 
 	sci_set_folding_margin_visible(sci, editor_prefs.folding);
 
 	/* virtual space */
 	SSM(sci, SCI_SETVIRTUALSPACEOPTIONS, editor_prefs.show_virtual_space, 0);
+
+	/* Change history */
+	guint change_history_mask;
+	change_history_mask = SC_CHANGE_HISTORY_DISABLED;
+	if (editor_prefs.change_history_markers)
+		change_history_mask |= SC_CHANGE_HISTORY_ENABLED|SC_CHANGE_HISTORY_MARKERS;
+	if (editor_prefs.change_history_indicators)
+		change_history_mask |= SC_CHANGE_HISTORY_ENABLED|SC_CHANGE_HISTORY_INDICATORS;
+	SSM(sci, SCI_SETCHANGEHISTORY, change_history_mask, 0);
 
 	/* caret Y policy */
 	caret_y_policy = CARET_EVEN;

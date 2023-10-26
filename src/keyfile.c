@@ -91,7 +91,8 @@
 #define GEANY_DEFAULT_FONT_MSG_WINDOW	"Menlo Medium 12"
 #define GEANY_DEFAULT_FONT_EDITOR		"Menlo Medium 12"
 #else
-#define GEANY_DEFAULT_TOOLS_BROWSER		"firefox"
+/* Browser chosen by GTK */
+#define GEANY_DEFAULT_TOOLS_BROWSER		""
 #define GEANY_DEFAULT_FONT_SYMBOL_LIST	"Sans 9"
 #define GEANY_DEFAULT_FONT_MSG_WINDOW	"Monospace 9"
 #define GEANY_DEFAULT_FONT_EDITOR		"Monospace 10"
@@ -255,6 +256,8 @@ static void init_pref_groups(void)
 		"detect_indent_width", FALSE, "check_detect_indent_width");
 	stash_group_add_toggle_button(group, &editor_prefs.use_tab_to_indent,
 		"use_tab_to_indent", TRUE, "check_tab_key_indents");
+	stash_group_add_toggle_button(group, &editor_prefs.backspace_unindent,
+		"backspace_unindent", TRUE, "check_backspace_unindent");
 	stash_group_add_spin_button_integer(group, &editor_prefs.indentation->width,
 		"pref_editor_tab_width", 4, "spin_indent_width");
 	stash_group_add_combo_box(group, (gint*)(void*)&editor_prefs.indentation->auto_indent_mode,
@@ -271,6 +274,10 @@ static void init_pref_groups(void)
 		"radio_virtualspace_selection", GEANY_VIRTUAL_SPACE_SELECTION,
 		"radio_virtualspace_always", GEANY_VIRTUAL_SPACE_ALWAYS,
 		NULL);
+	stash_group_add_toggle_button(group, &editor_prefs.change_history_markers,
+		"change_history_markers", FALSE, "check_change_history_markers");
+	stash_group_add_toggle_button(group, &editor_prefs.change_history_indicators,
+		"change_history_indicators", FALSE, "check_change_history_indicators");
 	stash_group_add_toggle_button(group, &editor_prefs.autocomplete_doc_words,
 		"autocomplete_doc_words", FALSE, "check_autocomplete_doc_words");
 	stash_group_add_toggle_button(group, &editor_prefs.completion_drops_rest_of_word,
@@ -537,11 +544,13 @@ static void save_dialog_prefs(GKeyFile *config)
 	g_key_file_set_boolean(config, PACKAGE, "tab_order_beside", file_prefs.tab_order_beside);
 	g_key_file_set_integer(config, PACKAGE, "tab_pos_editor", interface_prefs.tab_pos_editor);
 	g_key_file_set_integer(config, PACKAGE, "tab_pos_msgwin", interface_prefs.tab_pos_msgwin);
+	g_key_file_set_integer(config, PACKAGE, "tab_label_length", interface_prefs.tab_label_len);
 
 	/* display */
 	g_key_file_set_boolean(config, PACKAGE, "show_indent_guide", editor_prefs.show_indent_guide);
 	g_key_file_set_boolean(config, PACKAGE, "show_white_space", editor_prefs.show_white_space);
 	g_key_file_set_boolean(config, PACKAGE, "show_line_endings", editor_prefs.show_line_endings);
+	g_key_file_set_boolean(config, PACKAGE, "show_line_endings_only_when_differ", editor_prefs.show_line_endings_only_when_differ);
 	g_key_file_set_boolean(config, PACKAGE, "show_markers_margin", editor_prefs.show_markers_margin);
 	g_key_file_set_boolean(config, PACKAGE, "show_linenumber_margin", editor_prefs.show_linenumber_margin);
 	g_key_file_set_boolean(config, PACKAGE, "long_line_enabled", editor_prefs.long_line_enabled);
@@ -904,6 +913,7 @@ static void load_dialog_prefs(GKeyFile *config)
 	editor_prefs.show_indent_guide = utils_get_setting_boolean(config, PACKAGE, "show_indent_guide", FALSE);
 	editor_prefs.show_white_space = utils_get_setting_boolean(config, PACKAGE, "show_white_space", FALSE);
 	editor_prefs.show_line_endings = utils_get_setting_boolean(config, PACKAGE, "show_line_endings", FALSE);
+	editor_prefs.show_line_endings_only_when_differ = utils_get_setting_boolean(config, PACKAGE, "show_line_endings_only_when_differ", FALSE);
 	editor_prefs.scroll_stop_at_last_line = utils_get_setting_boolean(config, PACKAGE, "scroll_stop_at_last_line", TRUE);
 	editor_prefs.auto_close_xml_tags = utils_get_setting_boolean(config, PACKAGE, "auto_close_xml_tags", TRUE);
 	editor_prefs.complete_snippets = utils_get_setting_boolean(config, PACKAGE, "complete_snippets", TRUE);
@@ -1340,42 +1350,18 @@ static gboolean open_session_file(gchar **tmp, guint len)
 	return ret;
 }
 
-/* trigger a notebook page switch after unsetting main_status.opening_session_files
- * for callbacks to run (and update window title, encoding settings, and so on)
- */
-static gboolean switch_to_session_page(gpointer data)
-{
-	gint n_pages = gtk_notebook_get_n_pages(GTK_NOTEBOOK(main_widgets.notebook));
-	gint cur_page = gtk_notebook_get_current_page(GTK_NOTEBOOK(main_widgets.notebook));
-	gint target_page = session_notebook_page >= 0 ? session_notebook_page : cur_page;
-
-	if (n_pages > 0)
-	{
-		if (target_page != cur_page)
-			gtk_notebook_set_current_page(GTK_NOTEBOOK(main_widgets.notebook), target_page);
-		else
-			g_signal_emit_by_name(GTK_NOTEBOOK(main_widgets.notebook), "switch-page",
-			                      gtk_notebook_get_nth_page(GTK_NOTEBOOK(main_widgets.notebook), target_page),
-			                      target_page);
-	}
-	session_notebook_page = -1;
-
-	return G_SOURCE_REMOVE;
-}
 
 /* Open session files
  * Note: notebook page switch handler and adding to recent files list is always disabled
  * for all files opened within this function */
 void configuration_open_files(GPtrArray *session_files)
 {
-	gint i;
 	gboolean failure = FALSE;
 
 	/* necessary to set it to TRUE for project session support */
 	main_status.opening_session_files++;
 
-	i = file_prefs.tab_order_ltr ? 0 : (session_files->len - 1);
-	while (TRUE)
+	for (guint i = 0; i < session_files->len; i++)
 	{
 		gchar **tmp = g_ptr_array_index(session_files, i);
 		guint len;
@@ -1386,19 +1372,6 @@ void configuration_open_files(GPtrArray *session_files)
 				failure = TRUE;
 		}
 		g_strfreev(tmp);
-
-		if (file_prefs.tab_order_ltr)
-		{
-			i++;
-			if (i >= (gint)session_files->len)
-				break;
-		}
-		else
-		{
-			i--;
-			if (i < 0)
-				break;
-		}
 	}
 
 	g_ptr_array_free(session_files, TRUE);
@@ -1406,8 +1379,9 @@ void configuration_open_files(GPtrArray *session_files)
 	if (failure)
 		ui_set_statusbar(TRUE, _("Failed to load one or more session files."));
 	else
-		g_idle_add(switch_to_session_page, NULL);
+		document_show_tab_idle(session_notebook_page >= 0 ? document_get_from_page(session_notebook_page) : document_get_current());
 
+	session_notebook_page = -1;
 	main_status.opening_session_files--;
 }
 
